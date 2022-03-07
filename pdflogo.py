@@ -20,7 +20,13 @@ def main():
         {"x1": None, "y1": None, "x2": None, "y2": None})
     # try to get the last start and step page indicators from the user settings
     start_str = sg.user_settings_get_entry("-us_start-", "1")
+    sg.Print(f"from user settings, start_str={start_str}")
+    start = intOrNone(start_str) #needed in order to have it as parameter of merge()
+    sg.Print(f"from user settings, start={start}")
     step_str = sg.user_settings_get_entry("-us_step-", "1")
+    sg.Print(f"from user settings, step_str={step_str}")
+    step = intOrNone(step_str)   #needed in order to have it as parameter of merge()
+    sg.Print(f"from user settings, step={step}")
 
     # The window Layout
     labellength = 23
@@ -41,12 +47,13 @@ def main():
             sg.Text("x1"), sg.In(position["x1"], size=(3, 1), justification="right", enable_events=True, key="-POS_X1-"),
             sg.Text("y1"), sg.In(position["y1"], size=(3, 1), justification="right", enable_events=True, key="-POS_Y1-"),
             sg.Text("x2"), sg.In(position["x2"], size=(3, 1), justification="right", enable_events=True, key="-POS_X2-"),
-            sg.Text("y2"), sg.In(position["y2"], size=(3, 1), justification="right", enable_events=True, key="-POS_Y2-")
+            sg.Text("y2"), sg.In(position["y2"], size=(3, 1), justification="right", enable_events=True, key="-POS_Y2-"),
+            sg.Text("A4: breedte (x) = 612   hoogte (y) = 792")
         ],
         [
             sg.Text("Op welke pagina's?", size=(labellength, 1)),
-            sg.Text("1ᵉ pagina"), sg.In(start_str, size=(3, 1), justification="right", enable_events=True, key="-START-"),
-            sg.Text("Herhalen elke"), sg.In(step_str, size=(3, 1), justification="right", enable_events=True, key="-STEP-"),
+            sg.Text("1ᵉ keer op pagina"), sg.In(start_str, size=(3, 1), justification="center", enable_events=True, key="-START-"),
+            sg.Text("daarna elke"), sg.In(step_str, size=(3, 1), justification="center", enable_events=True, key="-STEP-"),
             sg.Text("pagina's (stap-waarde)")
         ],
         [
@@ -79,11 +86,14 @@ def main():
             sg.user_settings_set_entry("-us_logopos-", position)
         elif event in("-START-", "-STEP-"):
             start = intOrNone(values["-START-"])
-            if start is not None:
-                sg.user_settings_set_entry("-us_start-", values["-START-"])
-                start = start - 1 #PyMuPDF uses pagenumbering starting from 0!
+            sg.user_settings_set_entry("-us_start-", values["-START-"])
             step = intOrNone(values["-STEP-"])
             sg.user_settings_set_entry("-us_step-", values["-STEP-"])
+            sg.Print(f"In event loop:")
+            sg.Print(f'    start_str={sg.user_settings_get_entry("-us_start-", "-99")}')
+            sg.Print(f"    start    ={start}")
+            sg.Print(f'    step_str ={sg.user_settings_get_entry("-us_step-", "-99")}')
+            sg.Print(f"    step     ={step}")
         elif event == "-MERGE-":
             merge(pdfin_path, logoin_path, pdfout_path, position, start, step)
 
@@ -137,11 +147,17 @@ def merge(pdfin_path, logoin_path, pdfout_path, position, start, step):
         sg.popup_error(f"Fout in positie:\ny1 moet kleiner zijn dan y2. y1={position['y1']}, y2={position['y2']}", title="Fout")
         return
     
-    if start < 0:
-        sg.popup(f"Waarschuwing: Startpagina is negatief.")
+    if start is None:
+        sg.popup(f"Waarschuwing: Startpagina is niet opgegeven.")
         return
-    if step < 0:
-        sg.popup(f"Waarschuwing: Stapwaarde pagina's is negatief.")
+    if start < 1:
+        sg.popup(f"Waarschuwing: Startpagina is te klein.")
+        return
+    if step is None:
+        sg.popup(f"Waarschuwing: Stapwaarde pagina's is niet opgegeven.")
+        return
+    if step < 1:
+        sg.popup(f"Waarschuwing: Stapwaarde pagina's is te klein.")
         return
     
     sg.Print(f"(After testing) PDF IN: {pdfin_path}\nLOGO IN: {logoin_path}\nPDF OUT: {pdfout_path}")
@@ -153,56 +169,60 @@ def merge(pdfin_path, logoin_path, pdfout_path, position, start, step):
     sg.Print(f"hf_pdf_in OK.")
     numpages_pdf_in = hf_pdf_in.page_count
     sg.Print(f"{pdfin_path} has {numpages_pdf_in} pages.")
-    logo_rectangle = fitz.Rect(position['x1'], position['y1'], position['x2'], position['y2'])
+    logo_rectangle = fitz.Rect(position['x1'], position['y1'], position['x2']+1, position['y2']+1) #+1 since x2,y2 by definition is outside the rectangle (PyMuPDF version >= 1.19.*)
     sg.Print(f"logo_rectangle OK")
     hf_logo_in = open(logoin_path, "rb").read()
     try:
         doc_logopdf_in = fitz.open(logoin_path)
+        sg.Print(f"fitz.open({logoin_path}) was successfull")
     except:
+        sg.Print(f"fitz.open({logoin_path}) Failed. Using an empty document as a logo.")
         doc_logopdf_in = fitz.open(None)
-    sg.Print(f"hf_logo_in OK")
-    #Usign the cross reference system seems not to work: In a chromium browser, only the first page has an image.
-    #In Adobe Acrobat Reader DC: "There was an error processing a page. There was a problem reading this document (18)"
-    #logo_xref = 0 #images are given a cross reference in PDF, by referencing it, the same image (one binary) is used on multiple pages
-    #sg.Print(f"logo_xref OK. xref={logo_xref}")
-    #start = 0 # Put images, starting from the first page
-    #step = 2  # Put images on alternating pages
-    for page in hf_pdf_in.pages(start, numpages_pdf_in, step):
+    sg.Print(f'hf_logo_in OK. metadata["format"]={doc_logopdf_in.metadata["format"]}')
+    LogoIsPDF = doc_logopdf_in.metadata["format"][0:3] == "PDF"
+
+    for page in hf_pdf_in.pages(start-1, numpages_pdf_in, step):
         sg.Print(f"Doing page {page.number}")
-        # logo_xref = page.insert_image(
-        #     logo_rectangle,
-        #     stream=hf_logo_in,
-        #     xref=logo_xref #reuse the image from the 2nd insertion
-        # )
-        # Not using xref: inserting a full image on every page.
-        try:
+        sg.Print(f"Page height = {page.rect.height}; width = {page.rect.width}")
+        if LogoIsPDF:
+            # There is a bug im MuPyPDF.
+            # page.show_pdf_page() does not work when all parameters are named.
+            # It has to have 2 or 3 positional parameters: rect, src[, pno]
+            # The documentaiton is also not very clear regarding the pno variable:
+            #    it is the pagenumber in the _src_ PDF, not the one from which _page_ is (which makes sence, really)
+            page.show_pdf_page(
+                #rect=page.rect,        # Position of the logo: the entire page
+                page.rect,             # Position of the logo: the entire page
+                #src=doc_logopdf_in,    # the logo
+                doc_logopdf_in,        # the logo
+                pno=0,                 # Use the first (and normally only) page of the loge PDF
+                clip=None,             # Don't cut out any part of the logo
+                rotate=0,              # Keep the orientation of the original logo
+                oc=0,                  # Don't know what this does. Doc: "control visibility via OCG / OCMD"
+                keep_proportion=True,  # Keep aspect ratio of the logo
+                overlay=False          # Put the logo in the background
+            )
+            sg.Print("PDF Logo added")
+        else: #Logo is not a PDF, so hopefully an image
+            #Usign the cross reference system seems not to work: In a chromium browser, only the first page has an image.
+            #In Adobe Acrobat Reader DC: "There was an error processing a page. There was a problem reading this document (18)"
+            #logo_xref = 0 #images are given a cross reference in PDF, by referencing it, the same image (one binary) is used on multiple pages
+            # logo_xref = page.insert_image(
+            #     logo_rectangle,
+            #     stream=hf_logo_in,
+            #     xref=logo_xref # Reuse the image from the 2nd insertion onwards
+            # )
+            # Not using xref: inserting a full image on every page.
             page.insert_image(
                 logo_rectangle,
                 stream=hf_logo_in
             )
             sg.Print("Image inserted")
-        except:
-            sg.Print("Image failed, trying pdf")
-            page.show_pdf_page(
-                rect=logo_rectangle,
-                src=doc_logopdf_in,
-                overlay=True
-            )
-            # try:
-            #     page.show_pdf_page(
-            #         logo_rectangle,
-            #         src=doc_logopdf_in,
-            #         overlay=True
-            #     )
-            #     sg.Print("PDF inserted")
-            # except:
-            #     sg.Print(f"ERROR: Fialed to insert {logoin_path}")
-        #sg.Print(f"xref={logo_xref}")
+
     sg.Print(f"looping over pages completed")
     hf_pdf_in.save(pdfout_path)
     sg.Print(f"Saved OK.")
-    # Put the logo on one or more pages END
-    #####
+
     choice, _ = sg.Window(
         'Klaar?',
         [
