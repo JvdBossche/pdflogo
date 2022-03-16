@@ -1,0 +1,2 @@
+PyMuPDF==1.19.5
+PySimpleGUI==4.57.0

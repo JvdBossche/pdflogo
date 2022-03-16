@@ -1,4 +1,4 @@
-# pdflogo.py
+# pdflogo.pyw
 
 from tkinter import NONE #Use wrapper PySimpleGUI instead
 import PySimpleGUI as sg
