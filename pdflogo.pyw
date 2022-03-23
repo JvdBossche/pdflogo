@@ -8,7 +8,7 @@ import fitz #a.k.a. PyMuPDF, to work with PDFs
 import os.path
 import sys
 
-debug=False
+debug=True
 def dPrint(*args, **kwargs):
     """
     Asimple wrapper around sg.Print().
@@ -49,6 +49,9 @@ def main():
             sg.Text("Bron PDF", size=(labellength, 1)),
             sg.In(size=(pathlength, 1), enable_events=True, key="-PDFIN-"),
             sg.FileBrowse("Openen...", target="-PDFIN-")
+        ],
+        [
+            sg.Text()
         ],
         [
             sg.Text("Bron Logo (PNG, JPG of PDF)", size=(labellength, 1)),
